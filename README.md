@@ -8,9 +8,9 @@ This SD extension allows you to turn posts from various image boorus into stable
 
 ### Changes
 
-> Fix for 403 Forbidden Error.
-> Fixes 'Send Image to tag selection' functionality.
-> Support for Gelbooru
+> Fix for 403 Forbidden Error.   <br>
+> Fixes 'Send Image to tag selection' functionality.  <br>
+> Support for Gelbooru.  <br>
 
 ### Installation
 
