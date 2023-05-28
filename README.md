@@ -2,18 +2,26 @@
 
 This is an extension for [stable-diffusion-webui](https://github.com/AUTOMATIC1111/stable-diffusion-webui).
 
-### If you like this project, I encourage you to fork it and help me work on it! If you *really* like this project, please hire me to write more python for you. Just don't ask me to do any more javascript.
+### This is a fork of the original booru2prompt extension that hasn't been updated in a while.
 
 This SD extension allows you to turn posts from various image boorus into stable diffusion prompts. It does so by pulling a list of tags down from their API. You can copy-paste in a link to the post you want yourself, or use the built-in search feature to do it all without leaving SD.
 
+### Changes
+
+> Fix for 403 Forbidden Error.
+> Fixes 'Send Image to tag selection' functionality.
+> Support for Gelbooru
+
+### Installation
+
 To install this extension, navigate to your `extensions` directory and run `git clone https://github.com/Malisius/booru2prompt.git`. You can either restart SD completely or look at the bottom of SD's settings for `Restart Gradio and Refresh Components`. 
 
+### Usage
+
 To start, visit the `API Keys` tab to put in your API keys. Most features should work without this, but some things like sort tags might not work depending on the restrictions of the booru.
-The included `settings.json` has configuration for danbooru.donmai.us and aibooru.space, but you can add your own by following the same format. Just add a new entry to the `boorus` list with the `name` and `host` keys.
+The included `settings.json` has configuration for danbooru.donmai.us and aibooru.space, but you can add your own by following the same format. Just add a new entry to the `boorus` list with the `name` and `host` keys. 
 
 `{"name": "Danbooru", "host": "https://danbooru.donmai.us", "username": "", "apikey": ""}`
-
-Take note: calls to aibooru.space are returning `403: Forbidden` no matter what I try. Any help with that would be appreciated.  
   
 ![image](https://user-images.githubusercontent.com/6227122/202934555-5eb73c22-aa8c-4757-b122-c47e6b7e7964.png)
 
