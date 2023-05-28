@@ -42,8 +42,6 @@ You can also search for images right in the extension! Just visit the `Search` t
 Enter in your search exactly as you would on an image booru: a list of tags seperated by spaces. These are sent to the API the same way a normal search is, so qualifier tags like `order:` and `rating:` should all work, assuming the image booru you're searching supports them.  
 By default, results with the `animated` tag will be automatically excluded. There's really no reason to turn that off right now, since I haven't yet figured out how to put anything other than a static image in a Gradio gallery.  
   
-![image](https://user-images.githubusercontent.com/6227122/202935945-73aee137-e788-4588-947a-96c84f76cd6e.png)
-  
 Having done that, just hit `Send image to tag selection` to continue.  
   
 ---
