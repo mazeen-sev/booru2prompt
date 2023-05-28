@@ -9,9 +9,6 @@ import gradio as gr
 import modules.ui
 from modules import script_callbacks, scripts
 
-#The auto1111 guide on developing extensions says to use scripts.basedir() to get the current directory
-#However, for some reason, this kept returning the stable diffusion root instead.
-#So this is my janky workaround to get this extensions directory.
 edirectory = inspect.getfile(lambda: None)
 edirectory = edirectory[:edirectory.find("scripts")]
 
@@ -104,17 +101,26 @@ def searchbooru(query, removeanimated, curpage, pagechange=0):
 
     #We're about to use this in a url, so make it a string real quick
     curpage = str(curpage)
-
-    url = host + f"/posts.json?"
+    if (host == 'https://gelbooru.com'):
+        url = host + f"/index.php?page=dapi&s=post&q=index&json=1&"
+    else:
+        url = host + f"/posts.json?"
 
     #Only append login parameters if we actually got some from the above getauth()
     #In the default settings.json in the repo, these are empty strings, so they'll
     #return false here.
-    if u:
-        url += f"login={u}&"
-    if a:
-        url += f"api_key={a}&"
 
+    if (host == 'https://gelbooru.com'):
+        if a:
+            url += f"api_key={a}&"
+        if u:
+            url += f"user_id={u}&"    
+    else:
+        if u:
+            url += f"login={u}&"
+        if a:
+            url += f"api_key={a}&"
+    #&api_key=144f6a4e7731f3ca1c9ef81776e4b465bc3cab72b6b9b8852f442b4f4cb50d85&user_id=1253782
     #Prepare the append some search tags
     #We can leave this here even if param:query is empty, since the api call still works apparently
     url += "tags="
@@ -127,7 +133,11 @@ def searchbooru(query, removeanimated, curpage, pagechange=0):
 
     #TODO: Add a settings option to change the images-per-page here
     url += f"{parse.quote_plus(query)}&limit=6"
-    url += f"&page={curpage}"
+
+    if (host == 'https://gelbooru.com'):
+        url += f"&pid={curpage}"
+    else:    
+        url += f"&page={curpage}"
 
     #I had this print here just to test my url building, but I kind of like it, so I'm leaving it
     print(url)
@@ -147,6 +157,10 @@ def searchbooru(query, removeanimated, curpage, pagechange=0):
 
     #The length of the returned json array might not actually be equal to what we reqeusted with limit=,
     #so we need to make sure to only step through what we got back
+
+    if (host == 'https://gelbooru.com'):
+        data = data['post']
+
     for i in range(len(data)):
         #So I guess not every returned result has a 'file_url'. Could not tell you why that is.
         #Doesn't matter. If there's no file to grab, just skip the entry.
@@ -161,12 +175,21 @@ def searchbooru(query, removeanimated, curpage, pagechange=0):
             #We're storing the images locally to be crammed into a Gradio gallery later.
             #This seemed simpler than using PIL images or whatever.
             savepath = edirectory + f"tempimages\\temp{i}.jpg"
-            image = urlretrieve(imageurl, savepath)
+            if (host == 'https://gelbooru.com'):
+                request = Request(imageurl, headers = {'User-Agent': 'Mozilla/5.0'})
+                response = urlopen(request)
+                image = response.read()
+                with open(savepath, 'wb') as file:
+                    file.write(image)
+            else:
+                image = urlretrieve(imageurl, savepath)
             localimages.append((savepath, id))
 
     #We're returning not just the images for the gallery, but the current page number
     #So that textbox in Gradio can be updated
     return localimages, curpage
+def gosendsearched():
+    pass
 
 def gotonextpage(query, removeanimated, curpage):
     return searchbooru(query, removeanimated, curpage, pagechange=1)
@@ -193,101 +216,158 @@ def updatesettings(active = settings['active']):
     return username, apikey, active, active
 
 def grabtags(url, negprompt, replacespaces, replaceunderscores, includeartist, includecharacter, includecopyright, includemeta):
-    """Get the tags for the selected post and update all the relevant textboxes on the Select tab.
+    if(gethost() == 'https://gelbooru.com'):
+        url = url.replace(':','=')
+        url = gethost() + f"/index.php?page=dapi&s=post&q=index&json=1&" + url
+        print(url)
 
-    Args:
-        url (str): Either the full path to the post, or just the posts' id, formatted like "id:xxxxxx"
-        negprompt (str): A negative prompt to paste into the relevant field. Setting to None will delete the existing negative prompt at the target
-        replacespaces (bool): True to replace all the spaces in the tag list with ", "
-        replaceunderscores (bool): True to replace the underscores in each tag with a space
-        includeartist (bool): True to include the artist tags in the final tag string
-        includecharacter (bool): True to include the character tags in the final tag string
-        includecopyright (bool): True to include the copyright tags in the final tag string
-        includemeta (bool): True to include the meta tags in the final tags string
+        request = Request(url, headers = {'User-Agent': 'Mozilla/5.0'})
+        response = urlopen(request)
+        data = json.loads(response.read())        
+        data = data['post']        
+        
+        tags = data[0]['tags']
+        imageurl = data[0]['sample_url']
 
-    Returns:
-        (str, str, str, str, str, str): A bunch of strings that will update some gradio components.
-        In order, it's the final tag string, the local path to the saved image, the artist tags, the
-        character tags, the copyright tags, and the meta tags.
-    """
-    #This check may be uneccesary, but we should fail out immediately if the url isn't a string.
-    #I struggle to remember what circumstance compelled me to add this.
-    if not isinstance(url, str):
-        return
+        if "http" not in imageurl:
+            imageurl = gethost() + imageurl
 
-    #Quick check to see if the user is selecting with the "id:xxxxxx" format.
-    #If the are, we can all the extra stuff for them
-    if url[0:2] == "id":
-        url = gethost() + "/posts/" + url[3:]
+        artisttags = None
+        charactertags = None
+        copyrighttags = None
+        metatags = None
 
-    #Many times, copying a link right off the booru will result in a lot of extra
-    #url parameters. We need to get rid of all those before we add our own.
-    index = url.find("?")
-    if index > -1:
-        url = url[:index]
+        #We got all these extra tags, but we're only including them in the final string if the relevant 
+        #checkboxes have been checked
+        if includeartist and artisttags:
+            tags = artisttags + " " + tags
+        if includecharacter and charactertags:
+            tags = charactertags + " " + tags
+        if includecopyright and copyrighttags:
+            tags = copyrighttags + " " + tags
+        if includemeta and metatags:
+            tags = metatags + " " + tags
 
-    #Check to make sure the request isn't already a .json api call before we add it ourselves
-    if not url[-4:] == "json":
-        url = url + ".json"
+        #It would be a shame if someone got these backwards and couldn't figure out the issue for a whole day
+        if replacespaces:
+            tags = tags.replace(" ", ", ")
+        if replaceunderscores:
+            tags = tags.replace("_", " ")
 
-    #Add the question mark denoting url parameters back in
-    url += "?"
+        #Adding a line for the negative prompt if we receieved one
+        #It's formatted this way very specifically. This is how the metadata looks on pngs coming out of SD
+        if negprompt:
+            tags += f"\nNegative prompt: {negprompt}"
 
-    u, a = getauth()
+        #Creating the temp directory if it doesn't already exist
+        if not os.path.exists(edirectory + "tempimages"):
+            os.makedirs(edirectory + "tempimages")
 
-    #Only append login parameters if we actually got some from the above getauth()
-    #In the default settings.json in the repo, these are empty strings, so they'll
-    #return false here.
-    if u:
-        url += f"login={u}&"
-    if a:
-        url += f"api_key={a}&"
+        request = Request(imageurl, headers = {'User-Agent': 'Mozilla/5.0'})
+        response = urlopen(request)
+        image = response.read()
+        with open(edirectory +  "tempimages\\temp.jpg", 'wb') as file:
+                    file.write(image)
 
-    print(url)
+        #My god look at that tuple
+        return (tags, edirectory + "tempimages\\temp.jpg", artisttags, charactertags, copyrighttags, metatags)
+    
+    else:  
+        """Get the tags for the selected post and update all the relevant textboxes on the Select tab.
 
-    response = urlopen(url)
-    data = json.loads(response.read())
+        Args:
+            url (str): Either the full path to the post, or just the posts' id, formatted like "id:xxxxxx"
+            negprompt (str): A negative prompt to paste into the relevant field. Setting to None will delete the existing negative prompt at the target
+            replacespaces (bool): True to replace all the spaces in the tag list with ", "
+            replaceunderscores (bool): True to replace the underscores in each tag with a space
+            includeartist (bool): True to include the artist tags in the final tag string
+            includecharacter (bool): True to include the character tags in the final tag string
+            includecopyright (bool): True to include the copyright tags in the final tag string
+            includemeta (bool): True to include the meta tags in the final tags string
 
-    tags = data['tag_string_general']
-    imageurl = data['file_url']
+        Returns:
+            (str, str, str, str, str, str): A bunch of strings that will update some gradio components.
+            In order, it's the final tag string, the local path to the saved image, the artist tags, the
+            character tags, the copyright tags, and the meta tags.
+        """
+        #This check may be uneccesary, but we should fail out immediately if the url isn't a string.
+        #I struggle to remember what circumstance compelled me to add this.
+        if not isinstance(url, str):
+            return
 
-    if "http" not in imageurl:
-        imageurl = gethost() + imageurl
+        #Quick check to see if the user is selecting with the "id:xxxxxx" format.
+        #If the are, we can all the extra stuff for them
+        if url[0:2] == "id":
+            url = gethost() + "/posts/" + url[3:]
 
-    artisttags = data["tag_string_artist"]
-    charactertags = data["tag_string_character"]
-    copyrighttags = data["tag_string_copyright"]
-    metatags = data["tag_string_meta"]
+        #Many times, copying a link right off the booru will result in a lot of extra
+        #url parameters. We need to get rid of all those before we add our own.
+        index = url.find("?")
+        if index > -1:
+            url = url[:index]
 
-    #We got all these extra tags, but we're only including them in the final string if the relevant 
-    #checkboxes have been checked
-    if includeartist and artisttags:
-        tags = artisttags + " " + tags
-    if includecharacter and charactertags:
-        tags = charactertags + " " + tags
-    if includecopyright and copyrighttags:
-        tags = copyrighttags + " " + tags
-    if includemeta and metatags:
-        tags = metatags + " " + tags
+        #Check to make sure the request isn't already a .json api call before we add it ourselves
+        if not url[-4:] == "json":
+            url = url + ".json"
 
-    #It would be a shame if someone got these backwards and couldn't figure out the issue for a whole day
-    if replacespaces:
-        tags = tags.replace(" ", ", ")
-    if replaceunderscores:
-        tags = tags.replace("_", " ")
+        #Add the question mark denoting url parameters back in
+        url += "?"
 
-    #Adding a line for the negative prompt if we receieved one
-    #It's formatted this way very specifically. This is how the metadata looks on pngs coming out of SD
-    if negprompt:
-        tags += f"\nNegative prompt: {negprompt}"
+        u, a = getauth()
 
-    #Creating the temp directory if it doesn't already exist
-    if not os.path.exists(edirectory + "tempimages"):
-        os.makedirs(edirectory + "tempimages")
-    urlretrieve(imageurl, edirectory +  "tempimages\\temp.jpg")
+        #Only append login parameters if we actually got some from the above getauth()
+        #In the default settings.json in the repo, these are empty strings, so they'll
+        #return false here.
+        if u:
+            url += f"login={u}&"
+        if a:
+            url += f"api_key={a}&"
 
-    #My god look at that tuple
-    return (tags, edirectory + "tempimages\\temp.jpg", artisttags, charactertags, copyrighttags, metatags)
+        print(url)
+        request = Request(url, headers = {'User-Agent': 'Mozilla/5.0'})
+        response = urlopen(request)
+        data = json.loads(response.read())
+
+        tags = data['tag_string_general']
+        imageurl = data['sample_url']
+
+        if "http" not in imageurl:
+            imageurl = gethost() + imageurl
+
+        artisttags = data["tag_string_artist"]
+        charactertags = data["tag_string_character"]
+        copyrighttags = data["tag_string_copyright"]
+        metatags = data["tag_string_meta"]
+
+        #We got all these extra tags, but we're only including them in the final string if the relevant 
+        #checkboxes have been checked
+        if includeartist and artisttags:
+            tags = artisttags + " " + tags
+        if includecharacter and charactertags:
+            tags = charactertags + " " + tags
+        if includecopyright and copyrighttags:
+            tags = copyrighttags + " " + tags
+        if includemeta and metatags:
+            tags = metatags + " " + tags
+
+        #It would be a shame if someone got these backwards and couldn't figure out the issue for a whole day
+        if replacespaces:
+            tags = tags.replace(" ", ", ")
+        if replaceunderscores:
+            tags = tags.replace("_", " ")
+
+        #Adding a line for the negative prompt if we receieved one
+        #It's formatted this way very specifically. This is how the metadata looks on pngs coming out of SD
+        if negprompt:
+            tags += f"\nNegative prompt: {negprompt}"
+
+        #Creating the temp directory if it doesn't already exist
+        if not os.path.exists(edirectory + "tempimages"):
+            os.makedirs(edirectory + "tempimages")
+        urlretrieve(imageurl, edirectory +  "tempimages\\temp.jpg")
+
+        #My god look at that tuple
+        return (tags, edirectory + "tempimages\\temp.jpg", artisttags, charactertags, copyrighttags, metatags)
 
 def on_ui_tabs():
     #Just setting up some gradio components way early
@@ -377,12 +457,15 @@ def on_ui_tabs():
                         prevpage.click(fn=gotoprevpage, inputs=[searchtext, removeanimated, curpage], outputs=[searchimages, curpage])
                         nextpage.click(fn=gotonextpage, inputs=[searchtext, removeanimated, curpage], outputs=[searchimages, curpage])
                     searchimages.render()
+                    def printimgids(searchimages,evt:gr.SelectData):
+                        return evt._data['value'], searchimages[evt.index][0]['name']
+                    searchimages.select(fn=printimgids, inputs=searchimages, outputs= [imagelink, selectimage])
                     with gr.Row():
                         sendsearched = gr.Button(value="Send image to tag selection", elem_id="sendselected")
                         #In this particular instance, the javascript function will be used to read the page, find the selected image in
                         #gallery, and send it back here to the imagelink output. I cannot fathom why Gradio galleries can't
                         #be used as inputs, but so be it.
-                        sendsearched.click(fn = None, _js="switch_to_select", outputs = imagelink)
+                        sendsearched.click(fn=None, _js="switch_to_select", outputs = imagelink)
         with gr.Tab("Settings/API Keys"):
             settingshelptext = gr.HTML(interactive=False, show_label = False, value="API info may not be necessary for some boorus, but certain information or posts may fail to load without it. For example, Danbooru doesn't show certain posts in search results unless you auth as a Gold tier member.")
             settingshelptext2 = gr.HTML(interactive=False, show_label=False, value="Also, please set the booru selection here before using select or search.")
